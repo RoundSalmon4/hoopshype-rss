@@ -50,14 +50,6 @@ NBA_TEAMS = {
     "washington-wizards": {"abbrev": "was", "name": "Washington Wizards"},
 }
 
-def build_team_lookup():
-    lookup = {}
-    for info in NBA_TEAMS.values():
-        lookup[info["name"].lower()] = info["abbrev"]
-    return lookup
-
-TEAM_NAME_TO_ABBREV = build_team_lookup()
-
 def fetch_url(url, timeout=TIMEOUT):
     req = urllib.request.Request(url, headers=HEADERS)
     try:
@@ -157,19 +149,6 @@ def parse_rumor_item(asset):
     except Exception as e:
         print(f"  Error parsing rumor: {e}")
         return None
-
-def get_team_abbrev(team_name, team_id, teams_info):
-    if team_id in teams_info:
-        return teams_info[team_id]["abbrev"]
-    name_lower = team_name.lower()
-    for name, abbrev in TEAM_NAME_TO_ABBREV.items():
-        if name in name_lower or name_lower in name:
-            return abbrev
-    for info in NBA_TEAMS.values():
-        for variant in [info["name"].lower(), info["abbrev"]]:
-            if variant in name_lower:
-                return info["abbrev"]
-    return name_lower.replace(" ", "-")[:3]
 
 def make_rss_item(rumor):
     item = ET.Element("item")
@@ -286,8 +265,9 @@ def update_feeds():
     rumors_by_team = {}
     for rumor in new_rumors:
         for team in rumor["teams"]:
-            abbrev = get_team_abbrev(team["name"], team["id"], teams_info)
-            rumors_by_team.setdefault(abbrev, []).append(rumor)
+            if team["id"] in teams_info:
+                abbrev = teams_info[team["id"]]["abbrev"]
+                rumors_by_team.setdefault(abbrev, []).append(rumor)
 
     print("Updating team feeds...")
     for info in NBA_TEAMS.values():
