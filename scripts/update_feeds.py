@@ -1,18 +1,16 @@
 import re
 import json
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import urllib.request
-import urllib.error
-import sys
+import time
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 RSS_DIR = BASE_DIR / "rss"
 TEAMS_DIR = RSS_DIR / "teams"
 DATA_DIR = BASE_DIR / "data"
 STATE_FILE = DATA_DIR / "state.json"
-TEAM_CACHE_FILE = DATA_DIR / "team_cache.json"
 
 HEADERS = {"User-Agent": "hoopshype-rss/1.0"}
 TIMEOUT = 30
@@ -50,6 +48,8 @@ NBA_TEAMS = {
     "washington-wizards": {"abbrev": "was", "name": "Washington Wizards"},
 }
 
+TEAM_NAME_TO_ABBREV = {info["name"].lower(): info["abbrev"] for info in NBA_TEAMS.values()}
+
 def fetch_url(url, timeout=TIMEOUT):
     req = urllib.request.Request(url, headers=HEADERS)
     try:
@@ -63,50 +63,87 @@ def extract_build_id(html):
     m = re.search(r'/_next/static/([^/]+)/_buildManifest\.js', html)
     return m.group(1) if m else None
 
+def extract_url_id(url):
+    m = re.search(r"/(\d+)/?$", url)
+    return m.group(1) if m else url.strip("/").split("/")[-1]
+
+def fetch_news_sitemap():
+    body = fetch_url("https://www.hoopshype.com/news-sitemap.xml")
+    if not body:
+        return None
+    root = ET.fromstring(body)
+    S = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
+    N = "{http://www.google.com/schemas/sitemap-news/0.9}"
+    I = "{http://www.google.com/schemas/sitemap-image/1.1}"
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
+    entries = []
+    for url_elem in root.findall(f"{S}url"):
+        loc_elem = url_elem.find(f"{S}loc")
+        if loc_elem is None:
+            continue
+        loc = loc_elem.text.strip()
+        if "/sports/nba/rumors/" not in loc:
+            continue
+        news = url_elem.find(f"{N}news")
+        title = news.find(f"{N}title").text.strip() if news is not None and news.find(f"{N}title") is not None else ""
+        pub = news.find(f"{N}publication_date").text.strip() if news is not None and news.find(f"{N}publication_date") is not None else ""
+        image_elem = url_elem.find(f"{I}image")
+        image = image_elem.find(f"{I}loc").text.strip() if image_elem is not None and image_elem.find(f"{I}loc") is not None else ""
+        try:
+            pub_date = datetime.fromisoformat(pub.replace("Z", "+00:00"))
+        except:
+            pub_date = None
+        if pub_date is not None and pub_date >= cutoff:
+            entries.append({"url": loc, "title": title, "pub_date": pub, "pub_date_obj": pub_date, "image": image})
+    return entries
+
+def fetch_article_data(url):
+    html = fetch_url(url)
+    if not html:
+        return None
+    result = {"teams": [], "body": "", "headline": "", "pub_date": ""}
+    for m in re.finditer(r'<script[^>]*type=["\']?application/ld\+json["\']?[^>]*>(.*?)</script>', html, re.DOTALL):
+        try:
+            ld = json.loads(m.group(1))
+            result["headline"] = ld.get("headline", "")
+            result["pub_date"] = ld.get("datePublished", "")
+            for kw in ld.get("keywords", []):
+                if kw.startswith("tag:"):
+                    tag_name = kw[4:]
+                    if tag_name.lower() in TEAM_NAME_TO_ABBREV:
+                        result["teams"].append(tag_name)
+        except:
+            pass
+    article = re.search(r"<article[^>]*>(.*?)</article>", html, re.DOTALL)
+    if article:
+        parts = []
+        for p in re.finditer(r"<p[^>]*>(.*?)</p>", article.group(1), re.DOTALL):
+            text = re.sub(r"<[^>]+>", "", p.group(1)).strip()
+            if len(text) > 20:
+                parts.append(text)
+        result["body"] = parts[0] if parts else ""
+    return result
+
 def fetch_rumors_data():
     html = fetch_url("https://www.hoopshype.com/rumors/")
     if not html:
         print("Failed to fetch hoopshype rumors page")
-        return None, None
+        return None
     build_id = extract_build_id(html)
     if not build_id:
         print("Could not extract Next.js build ID")
-        return None, None
+        return None
     data_url = f"https://www.hoopshype.com/_next/data/{build_id}/rumors.json"
     json_str = fetch_url(data_url)
     if not json_str:
-        print("Failed to fetch rumors JSON data")
-        return None, None
+        return None
     try:
-        return json.loads(json_str), build_id
+        return json.loads(json_str)
     except json.JSONDecodeError as e:
         print(f"Failed to parse JSON: {e}")
-        return None, None
+        return None
 
-def parse_teams(data):
-    pp = data.get("pageProps", {})
-    ds = pp.get("dehydratedState", {})
-    teams_info = {}
-    for q in ds.get("queries", []):
-        qk = q.get("queryKey", "")
-        if isinstance(qk, list) and len(qk) > 1 and qk[0] == "NBA":
-            sdata = q.get("state", {}).get("data", {})
-            teams_wrapper = sdata.get("teams", {})
-            if isinstance(teams_wrapper, dict):
-                for team in teams_wrapper.get("teams", []):
-                    if team.get("isAllStar"):
-                        continue
-                    slug = team.get("teamName", "").lower().replace(" ", "-")
-                    abbrev = NBA_TEAMS.get(slug, {}).get("abbrev", slug.replace("-", "")[:3])
-                    teams_info[team.get("contentTag", "")] = {
-                        "abbrev": abbrev,
-                        "name": team.get("teamName", ""),
-                        "location": team.get("location", ""),
-                        "nickname": team.get("nickname", ""),
-                    }
-    return teams_info
-
-def parse_rumors(data):
+def parse_rumors_from_api(data):
     rumors = []
     pp = data.get("pageProps", {})
     ds = pp.get("dehydratedState", {})
@@ -115,12 +152,12 @@ def parse_rumors(data):
         if isinstance(qk, list) and len(qk) > 1 and qk[1] == "asset_by_ssts":
             for page in q.get("state", {}).get("data", {}).get("pages", []):
                 for asset in page.get("searchAssets", {}).get("assets", []):
-                    rumor = parse_rumor_item(asset)
+                    rumor = _parse_api_asset(asset)
                     if rumor:
                         rumors.append(rumor)
     return rumors
 
-def parse_rumor_item(asset):
+def _parse_api_asset(asset):
     try:
         story_id = asset.get("id", "")
         headline = asset.get("headline", "")
@@ -137,8 +174,8 @@ def parse_rumor_item(asset):
             if isinstance(part, dict):
                 val = part.get("value", "")
                 if val:
-                    clean = re.sub(r'<[^>]+>', '', val)
-                    body += re.sub(r'\s+', ' ', clean).strip() + " "
+                    clean = re.sub(r"<[^>]+>", "", val)
+                    body += re.sub(r"\s+", " ", clean).strip() + " "
         teams = []
         for tw in (asset.get("tags") or []):
             if isinstance(tw, dict):
@@ -217,34 +254,73 @@ def create_placeholder_feeds():
                 f.write(xml)
 
 def update_feeds():
-    print("Fetching hoopshype rumors data...")
-    data, build_id = fetch_rumors_data()
-    if not data:
-        print("Failed to get data, exiting.")
-        return
+    print("Fetching HoopsHype rumors data...")
+    entries = fetch_news_sitemap()
+    all_rumors = []
+    used_sitemap = False
 
-    print("Parsing teams...")
-    teams_info = parse_teams(data)
-    print(f"  Found {len(teams_info)} NBA teams")
+    if entries:
+        used_sitemap = True
+        print(f"  Found {len(entries)} rumor URLs in the last 48h from sitemap")
+        state = load_state()
+        published = set(state.get("published", []))
+        new_entries = [e for e in entries if extract_url_id(e["url"]) not in published]
 
-    print("Parsing rumors...")
-    all_rumors = parse_rumors(data)
-    print(f"  Found {len(all_rumors)} rumors")
+        if new_entries:
+            print(f"  {len(new_entries)} new rumors to scrape...")
+            for i, entry in enumerate(new_entries):
+                rid = extract_url_id(entry["url"])
+                print(f"    [{i+1}/{len(new_entries)}] Fetching article...", end=" ")
+                article = fetch_article_data(entry["url"])
+                if not article:
+                    print("SKIP (fetch failed)")
+                    continue
+                body = article.get("body", "")
+                teams = [{"name": t} for t in article.get("teams", [])]
+                rumor = {
+                    "id": rid,
+                    "headline": article.get("headline") or entry["title"],
+                    "url": entry["url"],
+                    "pub_date": article.get("pub_date") or entry["pub_date"],
+                    "source": "",
+                    "body": body,
+                    "teams": teams,
+                }
+                all_rumors.append(rumor)
+                print(f"OK ({len(teams)} teams)")
+                time.sleep(0.5)
+        else:
+            print("  No new rumors to scrape.")
+    else:
+        print("  Sitemap failed, falling back to API...")
+
+    if not used_sitemap:
+        data = fetch_rumors_data()
+        if data:
+            api_rumors = parse_rumors_from_api(data)
+            if api_rumors:
+                state = load_state()
+                published = set(state.get("published", []))
+                for r in api_rumors:
+                    if r["id"] not in published:
+                        all_rumors.append(r)
+                print(f"  Got {len(api_rumors)} API rumors ({len([r for r in api_rumors if r['id'] not in published])} new)")
 
     if not all_rumors:
-        print("No rumors found, nothing to update.")
-        return
-
-    state = load_state()
-    new_rumors = [r for r in all_rumors if r["id"] not in state.get("published", [])]
-
-    if not new_rumors:
         print("No new rumors to publish.")
         return
 
-    print(f"  {len(new_rumors)} new rumors to add")
-    state.setdefault("published", []).extend(r["id"] for r in new_rumors)
-    state["published"] = state["published"][-500:]
+    state = load_state()
+    published = set(state.get("published", []))
+    all_rumors = [r for r in all_rumors if r["id"] not in published]
+
+    if not all_rumors:
+        print("No new rumors to publish.")
+        return
+
+    print(f"  {len(all_rumors)} new rumors to add")
+    state.setdefault("published", []).extend(r["id"] for r in all_rumors)
+    state["published"] = state["published"][-10000:]
 
     RSS_DIR.mkdir(parents=True, exist_ok=True)
     create_placeholder_feeds()
@@ -257,16 +333,19 @@ def update_feeds():
         ch = existing.find("channel")
         if ch is not None:
             existing_items = list(ch.findall("item"))
-    all_items = existing_items + [make_rss_item(r) for r in new_rumors]
+    all_items = existing_items + [make_rss_item(r) for r in all_rumors]
     with open(all_path, "w", encoding="utf-8") as f:
         f.write(build_rss("HoopsHype Rumors - All", "All NBA trade rumors and free agency buzz from HoopsHype", "https://www.hoopshype.com/rumors/", all_items))
     print(f"  Wrote all.xml ({len(all_items)} items)")
 
     rumors_by_team = {}
-    for rumor in new_rumors:
+    for rumor in all_rumors:
         for team in rumor["teams"]:
-            if team["id"] in teams_info:
-                abbrev = teams_info[team["id"]]["abbrev"]
+            tname = team.get("name", "")
+            if not tname:
+                continue
+            abbrev = TEAM_NAME_TO_ABBREV.get(tname.lower())
+            if abbrev:
                 rumors_by_team.setdefault(abbrev, []).append(rumor)
 
     print("Updating team feeds...")
