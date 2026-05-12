@@ -1,0 +1,26 @@
+name: Update RSS Feeds
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/30 * * * *'
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests 2>/dev/null || true
+      - name: Update feeds
+        run: python scripts/update_feeds.py
+        continue-on-error: true
+      - name: Commit changes
+        run: |
+          git config user.name "rss-bot"
+          git config user.email "rss-bot@users.noreply.github.com"
+          git add rss/ data/state.json
+          git diff --staged --quiet || git commit -m "Update HoopsHype RSS feeds [skip ci]"
+          git push
