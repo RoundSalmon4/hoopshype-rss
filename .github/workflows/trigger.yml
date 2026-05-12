@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   repository_dispatch:
     types: [ping]
+  schedule:
+    - cron: "*/5 * * * *"
 
 concurrency:
   group: trigger-run
