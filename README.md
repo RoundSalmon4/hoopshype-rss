@@ -6,7 +6,9 @@ Auto-generated RSS feeds for NBA trade rumors and free agency buzz from HoopsHyp
 
 - **Rumor tracking** - Latest NBA trade rumors and free agency news
 - **Team-specific feeds** - Separate feeds for all 30 NBA teams
-- **Auto-updated** - Refreshes every 5 minutes via GitHub Actions
+- **Auto-updated** - Updated via GitHub Actions on demand
+- **Backfill support** - Fetches all available rumors from the last 48 hours on every run
+- **Dedup** - Previously-seen rumors are tracked to prevent duplicates
 
 ## Feeds Available
 
@@ -44,22 +46,18 @@ Auto-generated RSS feeds for NBA trade rumors and free agency buzz from HoopsHyp
 
 ## How It Works
 
-Every 5 minutes a GitHub Actions workflow fetches the latest rumors from HoopsHype
-(via their Next.js data route), organizes them by team, and generates RSS 2.0 XML files.
-Previously-seen rumors are tracked to prevent duplicates.
+A GitHub Actions workflow fetches HoopsHype's news sitemap to discover all recently
+published rumor article URLs. For each new article (not previously seen), the script
+scrapes the article page, extracts team association from embedded JSON-LD metadata,
+and generates RSS 2.0 XML files organized by team.
 
 ## Limitations
 
-HoopsHype only exposes their most recent ~14 rumors on their page at a time.
-Their internal API has over 10,000 total rumors but is locked behind private authentication,
-so there's no way to fetch older or paginated results. This means:
-
-- **Team coverage is limited to whatever HoopsHype has published recently.** If there
-  are no recent rumors about a particular team, that team's feed will be empty.
-- **The all.xml feed accumulates every rumor seen since the first run.** Over time
-  it grows as new rumors are published, but it can't backfill old ones.
-- **A rumor only appears in a team feed if HoopsHype tags it with that team.**
-  General league-wide rumors (tagged "NBA") don't go into any team feed.
+- **Team coverage depends on tagging.** A rumor appears in a team feed only if
+  HoopsHype's JSON-LD keyword metadata includes that team's name. General
+  league-wide rumors may not go into any team feed.
+- **Only the last 48 hours of rumors are fetched** (from the news sitemap). Older
+  articles are not backfilled beyond this window.
 
 ## License
 
