@@ -1,29 +1,35 @@
-name: Trigger Update
+name: Trigger HoopsHype update
 
 on:
   workflow_dispatch:
   repository_dispatch:
     types: [ping]
 
+concurrency:
+  group: trigger-run
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
 jobs:
   update:
     runs-on: ubuntu-latest
-    concurrency:
-      group: trigger-run
-      cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
-      - run: pip install requests 2>/dev/null || true
-      - name: Update feeds
-        run: python scripts/update_feeds.py
+          python-version: "3.11"
+      - run: pip install requests
+      - run: python scripts/update_feeds.py
         continue-on-error: true
-      - name: Commit changes
-        run: |
+      - run: |
           git config user.name "rss-bot"
           git config user.email "rss-bot@users.noreply.github.com"
-          git add rss/ data/state.json
-          git diff --staged --quiet || git commit -m "Quick update HoopsHype feeds [skip ci]"
-          git push
+          git add rss data/state.json
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Quick update HoopsHype feeds [skip ci]"
+            git push
+          fi
