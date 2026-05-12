@@ -6,7 +6,7 @@ Auto-generated RSS feeds for NBA trade rumors and free agency buzz from HoopsHyp
 
 - **Rumor tracking** - Latest NBA trade rumors and free agency news
 - **Team-specific feeds** - Separate feeds for all 30 NBA teams
-- **Auto-updated** - Refreshes every 30 minutes via GitHub Actions
+- **Auto-updated** - Refreshes every 5 minutes via GitHub Actions
 
 ## Feeds Available
 
@@ -44,9 +44,22 @@ Auto-generated RSS feeds for NBA trade rumors and free agency buzz from HoopsHyp
 
 ## How It Works
 
-This project uses the HoopsHype website's Next.js data route to fetch the latest rumors,
-organizes them by team, and generates RSS 2.0 XML files. The feeds are updated every 30
-minutes via a scheduled GitHub Actions workflow.
+Every 5 minutes a GitHub Actions workflow fetches the latest rumors from HoopsHype
+(via their Next.js data route), organizes them by team, and generates RSS 2.0 XML files.
+Previously-seen rumors are tracked to prevent duplicates.
+
+## Limitations
+
+HoopsHype only exposes their most recent ~14 rumors on their page at a time.
+Their internal API has over 10,000 total rumors but is locked behind private authentication,
+so there's no way to fetch older or paginated results. This means:
+
+- **Team coverage is limited to whatever HoopsHype has published recently.** If there
+  are no recent rumors about a particular team, that team's feed will be empty.
+- **The all.xml feed accumulates every rumor seen since the first run.** Over time
+  it grows as new rumors are published, but it can't backfill old ones.
+- **A rumor only appears in a team feed if HoopsHype tags it with that team.**
+  General league-wide rumors (tagged "NBA") don't go into any team feed.
 
 ## License
 
