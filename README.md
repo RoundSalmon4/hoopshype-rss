@@ -38,9 +38,9 @@ Auto-generated RSS feeds for NBA trade rumors and free agency buzz from HoopsHyp
 
 ## Example Feed URLs
 
-- All rumors: `https://raw.githubusercontent.com/<user>/hoopshype-rss/main/rss/all.xml`
-- Lakers rumors: `https://raw.githubusercontent.com/<user>/hoopshype-rss/main/rss/teams/lal.xml`
-- Celtics rumors: `https://raw.githubusercontent.com/<user>/hoopshype-rss/main/rss/teams/bos.xml`
+- All rumors: `https://raw.githubusercontent.com/RoundSalmon4/hoopshype-rss/main/rss/all.xml`
+- Lakers rumors: `https://raw.githubusercontent.com/RoundSalmon4/hoopshype-rss/main/rss/teams/lal.xml`
+- Celtics rumors: `https://raw.githubusercontent.com/RoundSalmon4/hoopshype-rss/main/rss/teams/bos.xml`
 
 ## How It Works
 
