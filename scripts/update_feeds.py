@@ -72,7 +72,8 @@ def fetch_news_sitemap():
     body = fetch_url("https://www.hoopshype.com/news-sitemap.xml")
     if not body:
         return None
-    root = ET.fromstring(body)
+    parser = ET.XMLParser()
+    root = ET.fromstring(body, parser=parser)
     S = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
     N = "{http://www.google.com/schemas/sitemap-news/0.9}"
     I = "{http://www.google.com/schemas/sitemap-image/1.1}"
@@ -224,7 +225,8 @@ def build_rss(title, description, link, items):
 def read_xml(path):
     if path.exists():
         try:
-            return ET.parse(str(path)).getroot()
+            parser = ET.XMLParser()
+            return ET.parse(str(path), parser=parser).getroot()
         except:
             pass
     return None
