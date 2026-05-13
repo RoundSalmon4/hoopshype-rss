@@ -3,6 +3,7 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 import urllib.request
 import time
 
@@ -82,6 +83,10 @@ def fetch_news_sitemap():
         if loc_elem is None:
             continue
         loc = loc_elem.text.strip()
+        # SSRF prevention: only allow URLs from hoopshype.com
+        parsed = urlparse(loc)
+        if parsed.netloc not in ("www.hoopshype.com", "hoopshype.com"):
+            continue
         if "/sports/nba/rumors/" not in loc:
             continue
         news = url_elem.find(f"{N}news")
